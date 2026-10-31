@@ -256,9 +256,15 @@ export function pigChoose(
     const held = hand.filter((card) => card.rank === rank).length;
     let score = held * 4;
     const known = memory.foxHas[rank] ?? 0;
-    if (known > 0) score += 7 + known * (difficulty === "sly" ? 4 : 2);
-    if (memory.foxLacks.includes(rank)) score -= difficulty === "sly" ? 10 : 4;
-    score += rng() * (difficulty === "sly" ? 0.7 : 3.2);
+    if (difficulty === "sly") {
+      if (held >= 3) score += 14;
+      if (known > 0) score += 48;
+      if (memory.foxLacks.includes(rank)) score -= 40;
+    } else {
+      if (known > 0) score += 7 + known * 2;
+      if (memory.foxLacks.includes(rank)) score -= 4;
+      score += rng() * 3.2;
+    }
     if (score > bestScore) {
       bestScore = score;
       best = rank;

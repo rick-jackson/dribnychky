@@ -1,9 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  RANK_ONE,
   RANK_WORD,
-  RANKS,
   ask,
   deal,
   emptyMemory,
@@ -73,21 +71,23 @@ function PlayingCard({
   hidden,
   fresh,
   index,
+  playable,
+  wanted,
+  onAsk,
 }: {
   card?: Card;
   hidden?: boolean;
   fresh?: boolean;
   index: number;
+  playable?: boolean;
+  wanted?: boolean;
+  onAsk?: () => void;
 }) {
-  if (hidden || !card) {
-    return <div className="card back" style={{ ["--i" as string]: index }} />;
-  }
-  const red = card.suit === "h" || card.suit === "d";
-  return (
-    <div
-      className={`card face${red ? " red" : ""}${fresh ? " from-them" : ""}`}
-      style={{ ["--i" as string]: index }}
-    >
+  const marks = `card${hidden || !card ? " back" : ` face${card.suit === "h" || card.suit === "d" ? " red" : ""}`}${fresh ? " from-them" : ""}${playable ? " playable" : ""}${wanted ? " wanted" : ""}`;
+  const style = { ["--i" as string]: index };
+  if (hidden || !card) return <div className={marks} style={style} />;
+  const body = (
+    <>
       <span className="corner">
         {card.rank}
         <SuitMark suit={card.suit} />
@@ -99,23 +99,41 @@ function PlayingCard({
         {card.rank}
         <SuitMark suit={card.suit} />
       </span>
+    </>
+  );
+  if (playable) {
+    return (
+      <button
+        type="button"
+        className={marks}
+        style={style}
+        onClick={onAsk}
+        aria-label={`Запитати: ${RANK_WORD[card.rank]}`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className={marks} style={style}>
+      {body}
     </div>
   );
 }
 
 function Home() {
   const [save, setSave] = useState<Save>(EMPTY_SAVE);
-  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+  const [difficulty, setDifficulty] = useState<Difficulty>("sly");
   const [stake, setStake] = useState<Stake>("trinket");
   const [status, setStatus] = useState<"menu" | "play" | "over">("menu");
   const [table, setTable] = useState<Table | null>(null);
   const [turn, setTurn] = useState<Side>("fox");
   const [locked, setLocked] = useState(false);
-  const [line, setLine] = useState("Пан Глек уже розклав колоду.");
+  const [line, setLine] = useState("Вітаю. Зіграємо в рибалку на дрібнички?");
+  const [wanted, setWanted] = useState<Rank | null>(null);
   const [mood, setMood] = useState<"calm" | "smug" | "worry">("calm");
   const [fresh, setFresh] = useState<string[]>([]);
   const [soundOn, setSoundOn] = useState(true);
-  const [winner, setWinner] = useState<Side | "tie" | null>(null);
   const life = useRef(0);
   const tableRef = useRef<Table | null>(null);
   const memRef = useRef<Memory>(emptyMemory());
@@ -147,7 +165,7 @@ function Home() {
 
   function tuneMood(next: Table) {
     const delta = next.books.fox.length - next.books.pig.length;
-    setMood(delta >= 2 ? "worry" : delta <= -1 ? "smug" : "calm");
+    setMood(delta >= 1 ? "worry" : delta <= -1 ? "smug" : "calm");
   }
 
   function noteAsk(who: Side, rank: Rank, meta: AskMeta) {
@@ -161,27 +179,25 @@ function Home() {
   async function finish(finalTable: Table, id: number) {
     if (life.current !== id) return;
     const who = winnerOf(finalTable);
-    setWinner(who);
     setStatus("over");
     setLocked(true);
     tuneMood(finalTable);
     const current = loadSave();
     if (who === "fox" && stakeRef.current === "medal") {
-      setLine("Медальйон твій. Чесна гра.");
+      setLine("Підкова ваша. Чесна гра.");
       speak("/voice/pig-medal.mp3");
       persist({ ...current, medal: true, fox: current.fox + 1, best: current.best + 1 });
     } else if (who === "fox") {
-      setLine("Гарно зіграно. Вітаю.");
+      setLine("Комплектів більше у вас. Клацніть підкову, якщо хочете підняти ставку.");
       speak("/voice/pig-youwin.mp3");
-      const best = current.best + 1;
-      persist({ ...current, fox: current.fox + 1, best });
+      persist({ ...current, fox: current.fox + 1, best: current.best + 1 });
     } else if (who === "pig") {
-      setLine("Партія моя.");
-      speak("/voice/pig-iwin.mp3");
+      setLine("Партія моя. Я в цьому доволі вправний.");
+      speak("/voice/pig-sorry.mp3");
       persist({ ...current, pig: current.pig + 1, best: 0 });
     } else {
-      setLine("Нічия. Дрібнички лишаються на столі.");
-      speak("/voice/pig-again.mp3");
+      setLine("Схоже, цього разу нічия. Дрібнички лишаються на столі.");
+      speak("/voice/pig-draw.mp3");
     }
   }
 
@@ -211,31 +227,26 @@ function Home() {
     tuneMood(meta.table);
     if (meta.transferred.length > 0) {
       sfxTake();
-      if (who === "fox") {
-        setLine("Пан Глек: Забирай. Вони твої.");
-        speak("/voice/pig-take.mp3");
-      } else {
-        setLine("Рудько віддає карти.");
-        speak("/voice/fox-give.mp3");
-      }
+      setLine(who === "fox" ? "Пан Глек: Забирай. Вони твої." : "Рудько віддає карти.");
+      speak(who === "fox" ? "/voice/pig-take.mp3" : "/voice/fox-give.mp3");
     } else if (meta.drawn && meta.drawn.rank === rank) {
       sfxTake();
-      setLine(who === "fox" ? "Саме те. Хід лишається за вами." : "Пан Глек витягнув потрібне.");
+      setLine(who === "fox" ? "Саме те. Хід лишається за вами." : "Йому випало те, що просив.");
       speak(who === "fox" ? "/voice/pig-pleasant.mp3" : "/voice/pig-skilled.mp3");
     } else if (meta.drawn) {
       sfxFish();
-      setLine(who === "fox" ? "Пан Глек: Бери карту." : "Бери карту, пане Глек.");
-      if (who === "fox") speak("/voice/pig-gofish.mp3");
+      setLine(who === "fox" ? "Пан Глек: Гарна спроба. Бери карту." : "Бери карту, пане Глек.");
+      speak(who === "fox" ? "/voice/pig-nicetry.mp3" : "/voice/pig-gofish.mp3");
     } else {
       sfxFish();
       setLine("Колода вже порожня.");
     }
+    setWanted(null);
     if (!(await sleep(760, id))) return;
     if (meta.booksMade.length > 0) {
       sfxBook();
-      const names = meta.booksMade.map((item) => RANK_ONE[item]).join(", ");
-      setLine(who === "fox" ? `Книжка Рудька: ${names}.` : `Книжка пана Глека: ${names}.`);
-      if (who === "pig") speak("/voice/pig-book.mp3");
+      setLine("Один комплект готовий.");
+      speak(who === "pig" && meta.table.books.pig.length > meta.table.books.fox.length ? "/voice/pig-sorry.mp3" : "/voice/pig-set.mp3");
       if (!(await sleep(820, id))) return;
     }
     if (meta.over || gameOver(meta.table)) {
@@ -255,7 +266,8 @@ function Home() {
     else {
       setTurn("fox");
       setLocked(false);
-      setLine("Ваш хід. Питайте ранг, який тримаєте в руці.");
+        setLine("Ваш хід. Клацніть карту того рангу, який питаєте.");
+        speak("/voice/pig-turn.mp3");
     }
   }
 
@@ -269,8 +281,8 @@ function Home() {
       await finish(live, id);
       return;
     }
-    if (Math.random() < 0.4) {
-      setLine("Хм. Дай подумаю.");
+    if (Math.random() < 0.35) {
+      setLine(diffRef.current === "sly" ? "Хм. Я це запам’ятав." : "Хм. Дай подумаю.");
       speak("/voice/pig-think.mp3");
     }
     const think = diffRef.current === "easy" ? 520 : diffRef.current === "sly" ? 980 : 760;
@@ -279,6 +291,7 @@ function Home() {
     if (!current || current.hands.pig.length === 0) return;
     const rank = pigChoose(current.hands.pig, memRef.current, diffRef.current, Math.random);
     setLine(`Пан Глек: А чи є ${RANK_WORD[rank]}?`);
+    setWanted(rank);
     speak(`/voice/pig-r-${rank}.mp3`);
     if (!(await sleep(700, id))) return;
     await playAsk("pig", rank, id, true);
@@ -295,13 +308,13 @@ function Home() {
     setStake(nextStake);
     setTable(next);
     setFresh([...next.hands.fox, ...next.hands.pig].map((card) => card.id));
-    setWinner(null);
+    setWanted(null);
     setMood("calm");
     setStatus("play");
     setTurn("fox");
     setLocked(false);
-    setLine("Вітаю за столом. Я — пан Глек. Зіграємо в рибалку на дрібнички?");
-    speak("/voice/pig-welcome.mp3");
+    setLine(nextStake === "medal" ? "Гаразд. Піднімаємо ставку на підкову." : "Гарна дрібничка. Граю ось цією.");
+    speak(nextStake === "medal" ? "/voice/pig-raise.mp3" : "/voice/pig-lovely.mp3");
     sfxDeal();
     void id;
   }
@@ -312,23 +325,22 @@ function Home() {
     void playAsk("fox", rank, life.current, false);
   }
 
-  const foxRanks = table
-    ? RANKS.filter((rank) => table.hands.fox.some((card) => card.rank === rank))
-    : [];
   const pigSrc =
     mood === "worry" ? "/art/pig-worry.jpg" : mood === "smug" ? "/art/pig-smug.jpg" : "/art/pig.jpg";
+  const canRaise = save.fox >= 1 && !save.medal && status !== "play";
+  const yourTurn = status === "play" && turn === "fox" && !locked;
 
   return (
     <main className="lounge">
       <header className="topbar">
         <div className="brand">
           <h1>Дрібнички</h1>
-          <p>Рибалка у вітальні пана Глека</p>
+          <p>Рибалка в кантині</p>
         </div>
         <div className="scoreline">
           <span className="pill">Рудько {save.fox}</span>
           <span className="pill">Глек {save.pig}</span>
-          <span className="pill">{save.medal ? "Медальйон у вас" : "Медальйон у Глека"}</span>
+          <span className="pill">{save.medal ? "Підкова у вас" : "Підкова в Глека"}</span>
           <button
             type="button"
             className="icon-btn"
@@ -345,168 +357,127 @@ function Home() {
         </div>
       </header>
 
-      {status === "menu" ? (
-        <section className="menu">
-          <div className="hero-row">
-            <div>
-              <h2>Стіл уже накритий зеленим сукном.</h2>
-              <p className="quiet">
-                Пан Глек тримає щасливий медальйон. Спершу виграйте дрібничку, тоді можна ставити його.
-              </p>
-            </div>
-            <img className="medal" src="/art/medal.jpg" alt="Золотий медальйон із кораблем" />
+      <section className="stage" aria-live="polite">
+        <div className={`actor${mood === "worry" ? " worry" : ""}`}>
+          <div className={`portrait-wrap${turn === "pig" && status === "play" ? " is-turn" : ""}`}>
+            <img src={pigSrc} alt="Пан Глек за столом у кантині" />
           </div>
-          <div className="choices" role="group" aria-label="Складність">
-            {(
-              [
-                ["easy", "М'яка"],
-                ["normal", "Звичайна"],
-                ["sly", "Хитра"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={difficulty === id}
-                onClick={() => setDifficulty(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="actions">
-            <button type="button" className="primary" onClick={() => begin("trinket")}>
-              Грати на дрібничку
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              disabled={save.fox < 1 || save.medal}
-              onClick={() => begin("medal")}
-            >
-              {save.medal ? "Медальйон уже ваш" : "Ставка: медальйон"}
-            </button>
-          </div>
-          <details className="rules">
-            <summary>Як грати</summary>
-            <p>
-              Питайте ранг, який є у вас на руках. Якщо він є в Глека, забираєте всі такі карти і ходите
-              знову. Якщо ні — берете карту з колоди. Чотири однакові складають книжку. Більше книжок після
-              порожньої колоди — перемога.
+          <div>
+            <p className="bubble">{line}</p>
+            <p className="quiet">
+              {status === "play"
+                ? yourTurn
+                  ? "Ваш хід. Клацніть одну зі своїх карт."
+                  : "Хід пана Глека."
+                : "Спершу дрібничка. Підкову можна поставити лише після перемоги."}
             </p>
-          </details>
-        </section>
-      ) : table ? (
-        <section className="stage" aria-live="polite">
-          <div className={`actor${mood === "worry" ? " worry" : ""}`}>
-            <div className={`portrait-wrap${turn === "pig" ? " is-turn" : ""}`}>
-              <img src={pigSrc} alt="Пан Глек, хазяїн вітальні" />
-            </div>
-            <div>
-              <p className="bubble">{line}</p>
-              <div className="books" aria-label="Книжки пана Глека">
-                {table.books.pig.map((rank) => (
-                  <span className="book" key={rank}>
-                    {rank}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
+        </div>
 
+        {table && status !== "menu" ? (
           <div className="hand hidden-hand" aria-label="Карти пана Глека">
             {sortHand(table.hands.pig).map((card, index) => (
               <PlayingCard key={card.id} hidden index={index} />
             ))}
           </div>
+        ) : (
+          <div className="hand hidden-hand" />
+        )}
 
-          <div className="felt">
-            <div className="deck" aria-label={`У колоді ${table.deck.length}`}>
-              <span>{table.deck.length}</span>
-            </div>
-          </div>
-
-          <div className="hand" aria-label="Ваші карти">
-            {sortHand(table.hands.fox).map((card, index) => (
-              <PlayingCard
-                key={card.id}
-                card={card}
-                index={index}
-                fresh={fresh.includes(card.id)}
-              />
+        <div className="felt">
+          <div className="sets" aria-label="Ваші комплекти">
+            {(table?.books.fox ?? []).map((rank) => (
+              <span className="book" key={rank}>
+                {rank}
+              </span>
             ))}
           </div>
+          <div className="deck" aria-label={`У колоді ${table?.deck.length ?? 52}`}>
+            <span>{table?.deck.length ?? 52}</span>
+          </div>
+          <button
+            type="button"
+            className={`charm${canRaise ? " live" : ""}`}
+            disabled={!canRaise}
+            onClick={() => begin("medal")}
+            aria-label={save.medal ? "Підкова вже ваша" : "Поставити щасливу підкову"}
+          >
+            <img src="/art/horseshoe.jpg" alt="" />
+          </button>
+          <div className="sets his" aria-label="Комплекти пана Глека">
+            {(table?.books.pig ?? []).map((rank) => (
+              <span className="book" key={rank}>
+                {rank}
+              </span>
+            ))}
+          </div>
+        </div>
 
-          <div className="actor fox">
-            <div>
+        {status === "menu" ? (
+          <div className="dock-actions">
+            <div className="choices" role="group" aria-label="Наскільки добре він пам’ятає">
+              {(
+                [
+                  ["easy", "Забудькуватий"],
+                  ["normal", "Звичайний"],
+                  ["sly", "Як у кантині"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={difficulty === id}
+                  onClick={() => setDifficulty(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="actions">
+              <button type="button" className="primary" onClick={() => begin("trinket")}>
+                Покласти дрібничку на стіл
+              </button>
+            </div>
+          </div>
+        ) : table ? (
+          <>
+            <div className="hand" aria-label="Ваші карти">
+              {sortHand(table.hands.fox).map((card, index) => (
+                <PlayingCard
+                  key={card.id}
+                  card={card}
+                  index={index}
+                  fresh={fresh.includes(card.id)}
+                  playable={yourTurn}
+                  wanted={wanted === card.rank}
+                  onAsk={() => onAsk(card.rank)}
+                />
+              ))}
+            </div>
+            <div className="actor fox">
               <p className="quiet">
-                {turn === "fox" && !locked ? "Ваш хід" : "Хід пана Глека"} · книжок {table.books.fox.length}
-                :{table.books.pig.length}
+                Комплекти {table.books.fox.length}:{table.books.pig.length}. Перемагає той, у кого їх більше.
               </p>
-              <div className="asks">
-                {foxRanks.map((rank) => {
-                  const count = table.hands.fox.filter((card) => card.rank === rank).length;
-                  return (
-                    <button
-                      key={rank}
-                      type="button"
-                      className="ask"
-                      disabled={locked || turn !== "fox" || status !== "play"}
-                      onClick={() => onAsk(rank)}
-                    >
-                      {RANK_WORD[rank]}
-                      <small>{count} на руках</small>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="books" aria-label="Ваші книжки">
-                {table.books.fox.map((rank) => (
-                  <span className="book" key={rank}>
-                    {rank}
-                  </span>
-                ))}
+              <div className={`portrait-wrap${yourTurn ? " is-turn" : ""}`}>
+                <img src="/art/fox.jpg" alt="Рудько" />
               </div>
             </div>
-            <div className={`portrait-wrap${turn === "fox" ? " is-turn" : ""}`}>
-              <img src="/art/fox.jpg" alt="Рудько" />
-            </div>
-          </div>
-        </section>
-      ) : null}
+          </>
+        ) : null}
 
-      {status === "over" && (
-        <section className="overlay">
-          <h2>
-            {winner === "fox"
-              ? stake === "medal"
-                ? "Медальйон ваш"
-                : "Дрібничка ваша"
-              : winner === "pig"
-                ? "Цього разу Глек"
-                : "Нічия"}
-          </h2>
-          <p className="quiet">
-            Книжки: Рудько {table?.books.fox.length ?? 0}, пан Глек {table?.books.pig.length ?? 0}.
-          </p>
+        {status === "over" && (
           <div className="actions">
-            <button type="button" className="primary" onClick={() => begin(stake === "medal" && !save.medal ? "medal" : "trinket")}>
-              Ще коло
+            <button type="button" className="primary" onClick={() => begin("trinket")}>
+              Ще дрібничка
             </button>
-            <button
-              type="button"
-              className="ghost"
-              disabled={save.fox < 1 || save.medal}
-              onClick={() => begin("medal")}
-            >
-              Ставка: медальйон
-            </button>
-            <button type="button" className="ghost" onClick={() => setStatus("menu")}>
-              До вітальні
-            </button>
+            {canRaise ? (
+              <button type="button" className="ghost" onClick={() => begin("medal")}>
+                Ставка: підкова
+              </button>
+            ) : null}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </main>
   );
 }
