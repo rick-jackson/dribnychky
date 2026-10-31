@@ -21,6 +21,7 @@ import {
   type Suit,
   type Table,
 } from "@/game/engine";
+import { Horseshoe, Paw, PigScene, type Face } from "@/game/cast";
 import {
   setSoundEnabled,
   sfxBook,
@@ -129,9 +130,9 @@ function Home() {
   const [table, setTable] = useState<Table | null>(null);
   const [turn, setTurn] = useState<Side>("fox");
   const [locked, setLocked] = useState(false);
-  const [line, setLine] = useState("Вітаю. Зіграємо в рибалку на дрібнички?");
+  const [line, setLine] = useState("Новий гість. Тобто суперник. Карти вже теплі.");
   const [wanted, setWanted] = useState<Rank | null>(null);
-  const [mood, setMood] = useState<"calm" | "smug" | "worry">("calm");
+  const [face, setFace] = useState<Face>("calm");
   const [fresh, setFresh] = useState<string[]>([]);
   const [soundOn, setSoundOn] = useState(true);
   const life = useRef(0);
@@ -163,9 +164,9 @@ function Home() {
     });
   }
 
-  function tuneMood(next: Table) {
+  function settle(next: Table) {
     const delta = next.books.fox.length - next.books.pig.length;
-    setMood(delta >= 1 ? "worry" : delta <= -1 ? "smug" : "calm");
+    setFace(delta >= 1 ? "worry" : delta <= -1 ? "smug" : "calm");
   }
 
   function noteAsk(who: Side, rank: Rank, meta: AskMeta) {
@@ -181,22 +182,26 @@ function Home() {
     const who = winnerOf(finalTable);
     setStatus("over");
     setLocked(true);
-    tuneMood(finalTable);
+    settle(finalTable);
     const current = loadSave();
     if (who === "fox" && stakeRef.current === "medal") {
-      setLine("Підкова ваша. Чесна гра.");
+      setFace("groan");
+      setLine("Підкова ваша. Якщо вона така щаслива, чому я програв?");
       speak("/voice/pig-medal.mp3");
       persist({ ...current, medal: true, fox: current.fox + 1, best: current.best + 1 });
     } else if (who === "fox") {
-      setLine("Комплектів більше у вас. Клацніть підкову, якщо хочете підняти ставку.");
+      setFace("groan");
+      setLine("Новачкам іноді щастить. Не звикайте. Підкову можна поставити.");
       speak("/voice/pig-youwin.mp3");
       persist({ ...current, fox: current.fox + 1, best: current.best + 1 });
     } else if (who === "pig") {
-      setLine("Партія моя. Я в цьому доволі вправний.");
-      speak("/voice/pig-sorry.mp3");
+      setFace("cheer");
+      setLine("Знову я. Свинська гідність не підводить.");
+      speak("/voice/pig-iwin.mp3");
       persist({ ...current, pig: current.pig + 1, best: 0 });
     } else {
-      setLine("Схоже, цього разу нічия. Дрібнички лишаються на столі.");
+      setFace("think");
+      setLine("Нічия. Навіть карти соромляться обирати.");
       speak("/voice/pig-draw.mp3");
     }
   }
@@ -224,31 +229,36 @@ function Home() {
       ...(meta.drawn ? [meta.drawn.id] : []),
       ...meta.refilled.map((card) => card.id),
     ]);
-    tuneMood(meta.table);
     if (meta.transferred.length > 0) {
       sfxTake();
-      setLine(who === "fox" ? "Пан Глек: Забирай. Вони твої." : "Рудько віддає карти.");
-      speak(who === "fox" ? "/voice/pig-take.mp3" : "/voice/fox-give.mp3");
+      setFace(who === "fox" ? "sour" : "laugh");
+      setLine(who === "fox" ? "Забирай. Сьогодні я щедрий. На жаль." : "Дякую. Я це передбачив ще на минулому ході.");
+      speak(who === "fox" ? "/voice/pig-take.mp3" : "/voice/pig-skilled.mp3");
     } else if (meta.drawn && meta.drawn.rank === rank) {
       sfxTake();
-      setLine(who === "fox" ? "Саме те. Хід лишається за вами." : "Йому випало те, що просив.");
+      setFace(who === "fox" ? "smug" : "cheer");
+      setLine(who === "fox" ? "О, саме те. Вдавайте, що так і задумали." : "Бачите? Колода мене любить.");
       speak(who === "fox" ? "/voice/pig-pleasant.mp3" : "/voice/pig-skilled.mp3");
     } else if (meta.drawn) {
       sfxFish();
-      setLine(who === "fox" ? "Пан Глек: Гарна спроба. Бери карту." : "Бери карту, пане Глек.");
+      setFace(who === "fox" ? "smug" : "sour");
+      setLine(who === "fox" ? "Гарна спроба. Бери з колоди і вдай, що так і задумав." : "Бери карту, пане Глек. І не сопи в колоду.");
       speak(who === "fox" ? "/voice/pig-nicetry.mp3" : "/voice/pig-gofish.mp3");
     } else {
       sfxFish();
-      setLine("Колода вже порожня.");
+      setFace("think");
+      setLine("Колода вже порожня. Як і моє терпіння.");
     }
     setWanted(null);
     if (!(await sleep(760, id))) return;
     if (meta.booksMade.length > 0) {
       sfxBook();
-      setLine("Один комплект готовий.");
-      speak(who === "pig" && meta.table.books.pig.length > meta.table.books.fox.length ? "/voice/pig-sorry.mp3" : "/voice/pig-set.mp3");
+      setFace(who === "pig" ? "cheer" : "groan");
+      setLine(who === "pig" ? "Комплект. Хтось тут уміє грати. Це я." : "Комплект ваш. Не звикайте до цього звуку.");
+      speak(who === "pig" ? "/voice/pig-set.mp3" : "/voice/pig-sorry.mp3");
       if (!(await sleep(820, id))) return;
     }
+    settle(meta.table);
     if (meta.over || gameOver(meta.table)) {
       await finish(meta.table, id);
       return;
@@ -266,7 +276,7 @@ function Home() {
     else {
       setTurn("fox");
       setLocked(false);
-        setLine("Ваш хід. Клацніть карту того рангу, який питаєте.");
+        setLine("Ваш хід. Не думайте надто довго, карти сохнуть.");
         speak("/voice/pig-turn.mp3");
     }
   }
@@ -281,8 +291,9 @@ function Home() {
       await finish(live, id);
       return;
     }
+    setFace("think");
     if (Math.random() < 0.35) {
-      setLine(diffRef.current === "sly" ? "Хм. Я це запам’ятав." : "Хм. Дай подумаю.");
+      setLine(diffRef.current === "sly" ? "Хм. Я це вже бачив. І запам’ятав." : "Хм. Дайте порахую на ратицях.");
       speak("/voice/pig-think.mp3");
     }
     const think = diffRef.current === "easy" ? 520 : diffRef.current === "sly" ? 980 : 760;
@@ -309,11 +320,15 @@ function Home() {
     setTable(next);
     setFresh([...next.hands.fox, ...next.hands.pig].map((card) => card.id));
     setWanted(null);
-    setMood("calm");
+    setFace("smug");
     setStatus("play");
     setTurn("fox");
     setLocked(false);
-    setLine(nextStake === "medal" ? "Гаразд. Піднімаємо ставку на підкову." : "Гарна дрібничка. Граю ось цією.");
+    setLine(
+      nextStake === "medal"
+        ? "Підкова? Гаразд. Тільки не кажіть, що вона щаслива, поки я її тримаю."
+        : "Гарна дрібничка. Я її вже подумки виграв.",
+    );
     speak(nextStake === "medal" ? "/voice/pig-raise.mp3" : "/voice/pig-lovely.mp3");
     sfxDeal();
     void id;
@@ -325,8 +340,6 @@ function Home() {
     void playAsk("fox", rank, life.current, false);
   }
 
-  const pigSrc =
-    mood === "worry" ? "/art/pig-worry.jpg" : mood === "smug" ? "/art/pig-smug.jpg" : "/art/pig.jpg";
   const canRaise = save.fox >= 1 && !save.medal && status !== "play";
   const yourTurn = status === "play" && turn === "fox" && !locked;
 
@@ -335,7 +348,7 @@ function Home() {
       <header className="topbar">
         <div className="brand">
           <h1>Дрібнички</h1>
-          <p>Рибалка в кантині</p>
+          <p>Мультяшна рибалка</p>
         </div>
         <div className="scoreline">
           <span className="pill">Рудько {save.fox}</span>
@@ -358,31 +371,17 @@ function Home() {
       </header>
 
       <section className="stage" aria-live="polite">
-        <div className={`actor${mood === "worry" ? " worry" : ""}`}>
-          <div className={`portrait-wrap${turn === "pig" && status === "play" ? " is-turn" : ""}`}>
-            <img src={pigSrc} alt="Пан Глек за столом у кантині" />
-          </div>
-          <div>
-            <p className="bubble">{line}</p>
-            <p className="quiet">
-              {status === "play"
-                ? yourTurn
-                  ? "Ваш хід. Клацніть одну зі своїх карт."
-                  : "Хід пана Глека."
-                : "Спершу дрібничка. Підкову можна поставити лише після перемоги."}
-            </p>
-          </div>
+        <div className="scene">
+          <PigScene face={face} />
+          <p className="bubble">{line}</p>
+          {table && status !== "menu" ? (
+            <div className="hand hidden-hand in-tray" aria-label="Карти пана Глека">
+              {sortHand(table.hands.pig).map((card, index) => (
+                <PlayingCard key={card.id} hidden index={index} />
+              ))}
+            </div>
+          ) : null}
         </div>
-
-        {table && status !== "menu" ? (
-          <div className="hand hidden-hand" aria-label="Карти пана Глека">
-            {sortHand(table.hands.pig).map((card, index) => (
-              <PlayingCard key={card.id} hidden index={index} />
-            ))}
-          </div>
-        ) : (
-          <div className="hand hidden-hand" />
-        )}
 
         <div className="felt">
           <div className="sets" aria-label="Ваші комплекти">
@@ -402,7 +401,7 @@ function Home() {
             onClick={() => begin("medal")}
             aria-label={save.medal ? "Підкова вже ваша" : "Поставити щасливу підкову"}
           >
-            <img src="/art/horseshoe.jpg" alt="" />
+            <Horseshoe />
           </button>
           <div className="sets his" aria-label="Комплекти пана Глека">
             {(table?.books.pig ?? []).map((rank) => (
@@ -415,12 +414,13 @@ function Home() {
 
         {status === "menu" ? (
           <div className="dock-actions">
+            <p className="quiet">Спершу дрібничка. Підкову він віддасть лише після поразки, і то скривиться.</p>
             <div className="choices" role="group" aria-label="Наскільки добре він пам’ятає">
               {(
                 [
                   ["easy", "Забудькуватий"],
                   ["normal", "Звичайний"],
-                  ["sly", "Як у кантині"],
+                  ["sly", "Пам’ятає все"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -440,7 +440,7 @@ function Home() {
             </div>
           </div>
         ) : table ? (
-          <>
+          <div className="you">
             <div className="hand" aria-label="Ваші карти">
               {sortHand(table.hands.fox).map((card, index) => (
                 <PlayingCard
@@ -454,15 +454,8 @@ function Home() {
                 />
               ))}
             </div>
-            <div className="actor fox">
-              <p className="quiet">
-                Комплекти {table.books.fox.length}:{table.books.pig.length}. Перемагає той, у кого їх більше.
-              </p>
-              <div className={`portrait-wrap${yourTurn ? " is-turn" : ""}`}>
-                <img src="/art/fox.jpg" alt="Рудько" />
-              </div>
-            </div>
-          </>
+            <Paw ready={yourTurn} flinch={wanted !== null} />
+          </div>
         ) : null}
 
         {status === "over" && (

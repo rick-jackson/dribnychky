@@ -13,16 +13,16 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Карткова рибалка українською: Рудько проти пана Глека, на дрібнички і медальйон.",
+        content: "Мультяшна рибалка українською: Рудько проти пана Глека, на дрібнички і підкову.",
       },
-      { name: "theme-color", content: "#1c120c" },
+      { name: "theme-color", content: "#e7c07a" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,650;7..72,700&family=Manrope:wght@500;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Comfortaa:wght@700&family=Manrope:wght@500;700&display=swap",
       },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
